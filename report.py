@@ -1,10 +1,12 @@
+# -*- coding: utf-8 -*-
+
 import openpyxl as xl
 import paramiko
 import sys
 import json
 
 def _set_cell(ws, row, column, value, error=False):
-    ws.cell(row=row, column=column).value = value
+    ws.cell(row=row, column=column).value = value.decode("ISO-8859-1")
     ws.cell(row=row, column=column).alignment = xl.styles.Alignment(wrapText=True)
     if error:
         redFill = xl.styles.PatternFill(start_color='FFFF0000',
@@ -12,15 +14,23 @@ def _set_cell(ws, row, column, value, error=False):
                    fill_type='solid')
         ws.cell(row=row, column=column).fill = redFill
 
-def _connect_host(host, username, password, wait_time, ip_gateway, port):
-    vm = paramiko.SSHClient()
-    vm.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    vm.connect(ip_gateway, username=username, password=password, auth_timeout=wait_time)
-    vmtransport = vm.get_transport()
-    vmchannel = vmtransport.open_channel("direct-tcpip", (host, port), (ip_gateway, port))
-    jhost = paramiko.SSHClient()
-    jhost.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    jhost.connect(host, username=username, password=password, sock=vmchannel, auth_timeout=wait_time)
+def _connect_host(host, username, password, wait_time, ip_gateway=None, port=22):
+
+    if ip_gateway:
+        vm = paramiko.SSHClient()
+        vm.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        vm.connect(ip_gateway, username=username, password=password, auth_timeout=wait_time)
+        vmtransport = vm.get_transport()
+        vmchannel = vmtransport.open_channel("direct-tcpip", (host, port), (ip_gateway, port))
+        jhost = paramiko.SSHClient()
+        jhost.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        jhost.connect(host, username=username, password=password, sock=vmchannel, auth_timeout=wait_time)
+
+    else:
+        jhost = paramiko.SSHClient()
+        jhost.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        jhost.connect(host, username=username, password=password, auth_timeout=wait_time)
+
     stdin, hostname, stderr1 = jhost.exec_command('uname -n 2>/dev/null')
     stdin, oslevel, stderr2 = jhost.exec_command('oslevel -s 2>/dev/null || uname -r 2>/dev/null')
     hostname = hostname.read()
@@ -30,7 +40,8 @@ def _connect_host(host, username, password, wait_time, ip_gateway, port):
     if not oslevel:
         oslevel = '###### {}'.format(stderr2.read())
     jhost.close()
-    vm.close()
+    if ip_gateway:
+        vm.close()
 
     values = {}
     values['hostname'] = hostname
@@ -62,7 +73,7 @@ if __name__ == "__main__":
             print 'Processing row {}: '.format(cell.row),
             sys.stdout.flush()
             if not ws.cell(row=cell.row, column=col_start).value:
-                print 'CONNECTING, '.format(cell.row),
+                print 'CONNECTING to {}, '.format(str(cell.value)),
                 sys.stdout.flush()
                 try:
                     values = _connect_host(host=str(cell.value),\
@@ -81,4 +92,4 @@ if __name__ == "__main__":
                 wb.save(filename)
             else:
                 print "DONE\n".format(cell.row),
-                sys.stdout.flush()
+sys.stdout.flush()
